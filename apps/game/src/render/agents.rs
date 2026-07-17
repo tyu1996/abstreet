@@ -1,7 +1,9 @@
 use std::borrow::Borrow;
 use std::collections::HashMap;
+use std::time::Duration as StdDuration;
 
 use geom::{Circle, Pt2D, QuadTree, Time};
+use instant::Instant;
 use map_gui::colors::ColorScheme;
 use map_gui::options::Options;
 use map_model::{Map, Traversable};
@@ -11,6 +13,31 @@ use widgetry::{Color, Drawable, GeomBatch, GfxCtx, Panel, Prerender};
 use crate::render::{
     draw_vehicle, unzoomed_agent_radius, DrawPedCrowd, DrawPedestrian, GameRenderable,
 };
+
+const UNZOOMED_AGENT_REFRESH_INTERVAL: StdDuration = StdDuration::from_secs(2);
+
+fn should_refresh_unzoomed_agents(is_dragging: bool, has_cached_agents: bool) -> bool {
+    !is_dragging || !has_cached_agents
+}
+
+fn should_recalculate_unzoomed_agents(
+    cache_is_missing: bool,
+    sim_time_changed: bool,
+    filters_changed: bool,
+    force_refresh: bool,
+    elapsed_since_refresh: Option<StdDuration>,
+) -> bool {
+    if cache_is_missing || filters_changed {
+        return true;
+    }
+    if !sim_time_changed {
+        return false;
+    }
+    force_refresh
+        || elapsed_since_refresh
+            .map(|elapsed| elapsed >= UNZOOMED_AGENT_REFRESH_INTERVAL)
+            .unwrap_or(true)
+}
 
 pub struct AgentCache {
     /// This is controlled almost entirely by the minimap panel. It has no meaning in edit mode.
@@ -22,6 +49,7 @@ pub struct AgentCache {
     // when either of (time, unzoomed agent filters) change, recalculate (a quadtree of all agents,
     // draw all agents)
     unzoomed: Option<(Time, UnzoomedAgents, QuadTree<AgentID>, Drawable)>,
+    unzoomed_last_refresh: Option<Instant>,
 }
 
 impl AgentCache {
@@ -31,6 +59,7 @@ impl AgentCache {
             time: None,
             agents_per_on: HashMap::new(),
             unzoomed: None,
+            unzoomed_last_refresh: None,
         }
     }
 
@@ -77,22 +106,31 @@ impl AgentCache {
         self.agents_per_on.insert(on, list);
     }
 
-    /// If the sim time has changed or the unzoomed agent filters have been modified, recalculate
-    /// the quadtree and drawable for all unzoomed agents.
+    /// Recalculate the quadtree and drawable when required, limiting simulation-time refreshes to
+    /// once every two real seconds. Initial, forced, and filter-change refreshes are immediate.
     pub fn calculate_unzoomed_agents<P: AsRef<Prerender>>(
         &mut self,
         prerender: &mut P,
         map: &Map,
         sim: &Sim,
         cs: &ColorScheme,
+        force_refresh: bool,
     ) -> &QuadTree<AgentID> {
         let now = sim.time();
-        let mut recalc = true;
-        if let Some((time, ref orig_agents, _, _)) = self.unzoomed {
-            if now == time && self.unzoomed_agents == orig_agents.clone() {
-                recalc = false;
-            }
-        }
+        let (sim_time_changed, filters_changed) = self
+            .unzoomed
+            .as_ref()
+            .map(|(time, orig_agents, _, _)| (now != *time, self.unzoomed_agents != *orig_agents))
+            .unwrap_or((false, false));
+        let recalc = should_recalculate_unzoomed_agents(
+            self.unzoomed.is_none(),
+            sim_time_changed,
+            filters_changed,
+            force_refresh,
+            self.unzoomed_last_refresh
+                .as_ref()
+                .map(|last_refresh| last_refresh.elapsed()),
+        );
 
         if recalc {
             let highlighted = sim.get_highlighted_people();
@@ -133,9 +171,14 @@ impl AgentCache {
             let draw = prerender.as_ref().upload(batch);
 
             self.unzoomed = Some((now, self.unzoomed_agents.clone(), quadtree.build(), draw));
+            self.unzoomed_last_refresh = Some(Instant::now());
         }
 
         &self.unzoomed.as_ref().unwrap().2
+    }
+
+    pub fn refresh_unzoomed_agents_next_time(&mut self) {
+        self.unzoomed_last_refresh = None;
     }
 
     pub fn draw_unzoomed_agents(
@@ -146,7 +189,11 @@ impl AgentCache {
         cs: &ColorScheme,
         opts: &Options,
     ) {
-        self.calculate_unzoomed_agents(g, map, sim, cs);
+        let active_drag = g.canvas.is_actively_dragging();
+        if should_refresh_unzoomed_agents(active_drag, self.unzoomed.is_some()) {
+            let force_refresh = g.canvas.is_dragging() && !active_drag;
+            self.calculate_unzoomed_agents(g, map, sim, cs, force_refresh);
+        }
         g.redraw(&self.unzoomed.as_ref().unwrap().3);
 
         if opts.debug_all_agents {
@@ -234,5 +281,90 @@ impl UnzoomedAgents {
         self.bikes = panel.is_checked("Bike");
         self.buses_and_trains = panel.is_checked("Bus");
         self.peds = panel.is_checked("Walk");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use instant::Instant;
+
+    use super::{should_recalculate_unzoomed_agents, should_refresh_unzoomed_agents, AgentCache};
+
+    #[test]
+    fn reuses_cached_unzoomed_agents_while_dragging() {
+        assert!(!should_refresh_unzoomed_agents(true, true));
+    }
+
+    #[test]
+    fn calculates_unzoomed_agents_when_drag_starts_without_a_cache() {
+        assert!(should_refresh_unzoomed_agents(true, false));
+    }
+
+    #[test]
+    fn refreshes_unzoomed_agents_after_dragging() {
+        assert!(should_refresh_unzoomed_agents(false, true));
+    }
+
+    #[test]
+    fn throttles_sim_time_refreshes_before_two_seconds() {
+        assert!(!should_recalculate_unzoomed_agents(
+            false,
+            true,
+            false,
+            false,
+            Some(Duration::from_millis(1_999)),
+        ));
+    }
+
+    #[test]
+    fn refreshes_sim_time_after_two_seconds() {
+        assert!(should_recalculate_unzoomed_agents(
+            false,
+            true,
+            false,
+            false,
+            Some(Duration::from_secs(2)),
+        ));
+    }
+
+    #[test]
+    fn forced_refresh_bypasses_the_interval() {
+        assert!(should_recalculate_unzoomed_agents(
+            false,
+            true,
+            false,
+            true,
+            Some(Duration::ZERO),
+        ));
+    }
+
+    #[test]
+    fn filter_changes_bypass_the_interval() {
+        assert!(should_recalculate_unzoomed_agents(
+            false,
+            false,
+            true,
+            false,
+            Some(Duration::ZERO),
+        ));
+    }
+
+    #[test]
+    fn missing_cache_bypasses_the_interval() {
+        assert!(should_recalculate_unzoomed_agents(
+            true, false, false, false, None,
+        ));
+    }
+
+    #[test]
+    fn invalidating_cache_forces_the_next_stale_refresh() {
+        let mut cache = AgentCache::new();
+        cache.unzoomed_last_refresh = Some(Instant::now());
+
+        cache.refresh_unzoomed_agents_next_time();
+
+        assert!(cache.unzoomed_last_refresh.is_none());
     }
 }

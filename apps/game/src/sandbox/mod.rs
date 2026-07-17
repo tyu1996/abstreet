@@ -167,9 +167,11 @@ impl State<App> for SandboxMode {
         }
 
         // We need to recalculate unzoomed agent mouseover when the mouse is still and time passes
-        // (since something could move beneath the cursor), or when the mouse moves.
+        // (since something could move beneath the cursor), or when the mouse moves. While dragging,
+        // keep using the existing agent cache; the release event refreshes it.
         if app.primary.current_selection.is_none()
             && ctx.canvas.is_unzoomed()
+            && !ctx.canvas.is_actively_dragging()
             && (ctx.redo_mouseover()
                 || self
                     .recalc_unzoomed_agent
@@ -674,12 +676,19 @@ fn mouseover_unzoomed_agent_circle(ctx: &mut EventCtx, app: &mut App) {
     } else {
         return;
     };
+    let force_refresh = ctx.canvas.is_dragging() && !ctx.canvas.is_actively_dragging();
 
     for id in app
         .primary
         .agents
         .borrow_mut()
-        .calculate_unzoomed_agents(ctx, &app.primary.map, &app.primary.sim, &app.cs)
+        .calculate_unzoomed_agents(
+            ctx,
+            &app.primary.map,
+            &app.primary.sim,
+            &app.cs,
+            force_refresh,
+        )
         .query_bbox(Circle::new(cursor, Distance::meters(3.0)).get_bounds())
     {
         if let Some(pt) = app.primary.sim.canonical_pt_for_agent(id, &app.primary.map) {
