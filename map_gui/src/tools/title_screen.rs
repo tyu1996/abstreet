@@ -1,9 +1,145 @@
 use widgetry::tools::{open_browser, PopupMsg, URLManager};
-use widgetry::{
-    EventCtx, Image, Key, Line, Panel, RewriteColor, SimpleState, State, Transition, Widget,
-};
+use widgetry::{EventCtx, Image, Line, Panel, SimpleState, State, Transition, Widget};
 
 use crate::AppLike;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MenuSection {
+    Primary,
+    Secondary,
+    More,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MenuAction {
+    ExploreCity,
+    OpenProject,
+    BeginnerHelp,
+    SimulationChallenges,
+    CommunityProposals,
+    Ungap,
+    FifteenMinuteNeighbourhoods,
+    LowTrafficNeighbourhoods,
+    ActDev,
+    AdvancedTools,
+    About,
+}
+
+struct MenuEntry {
+    label: &'static str,
+    tooltip: &'static str,
+    action: MenuAction,
+    section: MenuSection,
+}
+
+const MAIN_MENU_ENTRIES: &[MenuEntry] = &[
+    MenuEntry {
+        label: "Explore a city",
+        tooltip: "Choose a real city, observe traffic, and test street changes",
+        action: MenuAction::ExploreCity,
+        section: MenuSection::Primary,
+    },
+    MenuEntry {
+        label: "Open a project",
+        tooltip: "Open an existing street-change proposal",
+        action: MenuAction::OpenProject,
+        section: MenuSection::Secondary,
+    },
+    MenuEntry {
+        label: "New here?",
+        tooltip: "Learn the basic A/B Street workflow",
+        action: MenuAction::BeginnerHelp,
+        section: MenuSection::Secondary,
+    },
+    MenuEntry {
+        label: "Traffic simulation challenges",
+        tooltip: "Complete specific objectives in the traffic simulator",
+        action: MenuAction::SimulationChallenges,
+        section: MenuSection::More,
+    },
+    MenuEntry {
+        label: "Community proposals",
+        tooltip: "Try proposals for changing different cities",
+        action: MenuAction::CommunityProposals,
+        section: MenuSection::More,
+    },
+    MenuEntry {
+        label: "Ungap the Map",
+        tooltip: "Improve a city's bike network",
+        action: MenuAction::Ungap,
+        section: MenuSection::More,
+    },
+    MenuEntry {
+        label: "15-minute neighbourhoods",
+        tooltip: "Explore what places residents can easily reach",
+        action: MenuAction::FifteenMinuteNeighbourhoods,
+        section: MenuSection::More,
+    },
+    MenuEntry {
+        label: "Low traffic neighbourhoods",
+        tooltip: "Reduce vehicle shortcuts through residential streets",
+        action: MenuAction::LowTrafficNeighbourhoods,
+        section: MenuSection::More,
+    },
+    MenuEntry {
+        label: "ActDev",
+        tooltip: "Explore mobility patterns around new residential development",
+        action: MenuAction::ActDev,
+        section: MenuSection::More,
+    },
+    MenuEntry {
+        label: "Advanced tools",
+        tooltip: "Open specialist and developer tools",
+        action: MenuAction::AdvancedTools,
+        section: MenuSection::More,
+    },
+    MenuEntry {
+        label: "About",
+        tooltip: "About A/B Street and its simulation assumptions",
+        action: MenuAction::About,
+        section: MenuSection::More,
+    },
+];
+
+fn main_menu_entries() -> &'static [MenuEntry] {
+    MAIN_MENU_ENTRIES
+}
+
+fn menu_entry(action: MenuAction) -> &'static MenuEntry {
+    main_menu_entries()
+        .iter()
+        .find(|entry| entry.action == action)
+        .unwrap()
+}
+
+fn more_tool_rows(window_width: f64) -> Vec<Vec<MenuAction>> {
+    let actions_per_row = if window_width >= 1_200.0 { 4 } else { 2 };
+    main_menu_entries()
+        .iter()
+        .filter(|entry| entry.section == MenuSection::More)
+        .map(|entry| entry.action)
+        .collect::<Vec<_>>()
+        .chunks(actions_per_row)
+        .map(|chunk| chunk.to_vec())
+        .collect()
+}
+
+fn menu_button(ctx: &EventCtx, action: MenuAction, primary: bool) -> Widget {
+    let entry = menu_entry(action);
+    if primary {
+        ctx.style()
+            .btn_solid_primary
+            .text(entry.label)
+            .tooltip(entry.tooltip)
+            .build_def(ctx)
+    } else {
+        ctx.style()
+            .btn_outline
+            .text(entry.label)
+            .tooltip(entry.tooltip)
+            .build_def(ctx)
+    }
+}
 
 /// A title screen shared among all of the A/B Street apps.
 pub struct TitleScreen<A: AppLike + 'static> {
@@ -17,7 +153,6 @@ pub enum Executable {
     FifteenMin,
     OSMViewer,
     ParkingMapper,
-    Santa,
     RawMapEditor,
     LTN,
 }
@@ -25,120 +160,60 @@ pub enum Executable {
 impl<A: AppLike + 'static> TitleScreen<A> {
     pub fn new_state(
         ctx: &mut EventCtx,
-        app: &A,
+        _app: &A,
         current_exe: Executable,
         enter_state: Box<dyn Fn(&mut EventCtx, &mut A, Vec<&str>) -> Box<dyn State<A>>>,
     ) -> Box<dyn State<A>> {
+        let mut more_tools = vec![Line("More tools").small_heading().into_widget(ctx)];
+        for (idx, row) in more_tool_rows(ctx.canvas.window_width)
+            .into_iter()
+            .enumerate()
+        {
+            let row = Widget::row(
+                row.into_iter()
+                    .map(|action| menu_button(ctx, action, false))
+                    .collect(),
+            );
+            more_tools.push(if idx == 0 {
+                row.margin_below(10)
+            } else {
+                row.centered_horiz().margin_below(10)
+            });
+        }
+
         let panel = Panel::new_builder(Widget::col(vec![
-            Image::from_path("system/assets/pregame/logo.svg")
-                .untinted()
-                .dims(150.0)
-                .into_widget(ctx),
+            Widget::row(vec![
+                Image::from_path("system/assets/pregame/logo.svg")
+                    .untinted()
+                    .dims(120.0)
+                    .into_widget(ctx),
+                Widget::col(vec![
+                    Line("A/B Street").big_heading_plain().into_widget(ctx),
+                    Line("Traffic simulation and street planning")
+                        .small_heading()
+                        .into_widget(ctx),
+                ])
+                .centered_vert(),
+            ])
+            .centered_horiz(),
             Widget::row(vec![
                 Widget::col(vec![
-                    Line("Games").small_heading().into_widget(ctx),
-                    Widget::row(vec![
-                        Image::from_path("system/assets/pregame/tutorial.svg")
-                            .untinted()
-                            .dims(100.0)
-                            .into_widget(ctx),
-                        ctx.style()
-                            .btn_outline
-                            .text("Traffic simulation tutorial")
-                            .hotkey(Key::T)
-                            .disabled(true)
-                            .disabled_tooltip("Tutorial mode currently unmaintained, sorry")
-                            .build_def(ctx)
-                            .centered_vert(),
-                    ]),
-                    Widget::row(vec![
-                        Image::from_path("system/assets/pregame/challenges.svg")
-                            .untinted()
-                            .dims(100.0)
-                            .into_widget(ctx),
-                        ctx.style()
-                            .btn_outline
-                            .text("Traffic simulation challenges")
-                            .tooltip("Complete specific objectives in the traffic simulator")
-                            .build_def(ctx)
-                            .centered_vert(),
-                    ]),
-                    Widget::row(vec![
-                        Image::from_path("system/assets/santa/bike1.svg")
-                            .untinted()
-                            .dims(100.0)
-                            .into_widget(ctx),
-                        ctx.style()
-                            .btn_outline
-                            .text("15-minute Santa")
-                            .tooltip("Deliver presents as efficiently as possible")
-                            .build_def(ctx)
-                            .centered_vert(),
-                    ]),
+                    Line("Explore a real city, understand its streets, then test your ideas.")
+                        .into_widget(ctx),
+                    menu_button(ctx, MenuAction::ExploreCity, true).margin_above(20),
                 ])
                 .section(ctx),
                 Widget::col(vec![
-                    Line("Planning").small_heading().into_widget(ctx),
-                    Widget::row(vec![
-                        Image::from_path("system/assets/pregame/sandbox.svg")
-                            .untinted()
-                            .dims(100.0)
-                            .into_widget(ctx),
-                        ctx.style()
-                            .btn_outline
-                            .text("Traffic simulation sandbox")
-                            .hotkey(Key::S)
-                            .tooltip("Simulate traffic, edit streets, measure effects")
-                            .build_def(ctx)
-                            .centered_vert(),
-                    ]),
-                    Widget::row(vec![
-                        Image::from_path("system/assets/edit/bike.svg")
-                            .color(RewriteColor::ChangeAll(app.cs().bike_trip))
-                            .dims(100.0)
-                            .into_widget(ctx),
-                        ctx.style()
-                            .btn_outline
-                            .text("Ungap the Map")
-                            .tooltip("Improve a city's bike network")
-                            .build_def(ctx)
-                            .centered_vert(),
-                    ]),
-                    ctx.style()
-                        .btn_outline
-                        .text("15-minute neighborhoods")
-                        .tooltip("Explore what places residents can easily reach")
-                        .build_def(ctx),
-                    ctx.style()
-                        .btn_outline
-                        .text("Low traffic neighborhoods")
-                        .tooltip("Reduce vehicle shortcuts through residential streets")
-                        .build_def(ctx),
-                    ctx.style()
-                        .btn_outline
-                        .text("ActDev")
-                        .tooltip("Explore mobility patterns around new residential development")
-                        .build_def(ctx),
+                    menu_button(ctx, MenuAction::OpenProject, false).margin_below(10),
+                    menu_button(ctx, MenuAction::BeginnerHelp, false),
                 ])
                 .section(ctx),
-                Widget::col(vec![
-                    Line("Other").small_heading().into_widget(ctx),
-                    ctx.style()
-                        .btn_outline
-                        .text("Community proposals")
-                        .tooltip("Try out proposals for changing different cities")
-                        .build_def(ctx),
-                    ctx.style()
-                        .btn_outline
-                        .text("Advanced tools")
-                        .build_def(ctx),
-                    ctx.style().btn_outline.text("About").build_def(ctx),
-                ])
-                .section(ctx),
-            ]),
+            ])
+            .centered_horiz(),
+            Widget::col(more_tools).section(ctx),
             Widget::col(vec![
                 ctx.style()
-                    .btn_outline
+                    .btn_plain
                     .text("Created by Dustin Carlino, Yuwen Li, & Michael Kirk")
                     .build_widget(ctx, "Credits"),
                 built_info::maybe_update(ctx),
@@ -187,7 +262,6 @@ impl Executable {
         let mut args: Vec<String> = args.into_iter().map(|a| a.to_string()).collect();
         // Usually pass in the current map's path
         match self {
-            Executable::Santa => {}
             Executable::RawMapEditor => {
                 args.push(abstio::path_raw_map(app.map().get_name()));
                 args.push(format!(
@@ -211,7 +285,6 @@ impl Executable {
                 Executable::FifteenMin => "fifteen_min",
                 Executable::OSMViewer => "osm_viewer",
                 Executable::ParkingMapper => "parking_mapper",
-                Executable::Santa => "santa",
                 Executable::RawMapEditor => "map_editor",
                 Executable::LTN => "ltn",
             });
@@ -252,7 +325,6 @@ impl Executable {
                 Executable::OSMViewer => "osm_viewer",
                 // This only works on native
                 Executable::ParkingMapper => unreachable!(),
-                Executable::Santa => "santa",
                 Executable::RawMapEditor => "map_editor",
                 Executable::LTN => "ltn",
             };
@@ -277,45 +349,56 @@ impl<A: AppLike + 'static> SimpleState<A> for TitleScreen<A> {
         x: &str,
         _: &mut Panel,
     ) -> Transition<A> {
-        match x {
-            "Traffic simulation tutorial" => {
-                self.run(ctx, app, Executable::ABStreet, vec!["--tutorial-intro"])
+        let action = main_menu_entries()
+            .iter()
+            .find(|entry| entry.label == x)
+            .map(|entry| entry.action);
+
+        match action {
+            Some(MenuAction::ExploreCity) => {
+                self.run(ctx, app, Executable::ABStreet, vec!["--explore"])
             }
-            "Traffic simulation challenges" => {
+            Some(MenuAction::OpenProject) => {
+                self.run(ctx, app, Executable::ABStreet, vec!["--open-project"])
+            }
+            Some(MenuAction::BeginnerHelp) => {
+                self.run(ctx, app, Executable::ABStreet, vec!["--starter"])
+            }
+            Some(MenuAction::SimulationChallenges) => {
                 self.run(ctx, app, Executable::ABStreet, vec!["--challenges"])
             }
-            "15-minute Santa" => self.run(ctx, app, Executable::Santa, vec![]),
-            "Traffic simulation sandbox" => {
-                self.run(ctx, app, Executable::ABStreet, vec!["--sandbox"])
+            Some(MenuAction::CommunityProposals) => {
+                self.run(ctx, app, Executable::ABStreet, vec!["--proposals"])
             }
-            "Community proposals" => self.run(ctx, app, Executable::ABStreet, vec!["--proposals"]),
-            "Ungap the Map" => self.run(ctx, app, Executable::ABStreet, vec!["--ungap"]),
-            "15-minute neighborhoods" => self.run(ctx, app, Executable::FifteenMin, vec![]),
-            "Low traffic neighborhoods" => self.run(ctx, app, Executable::LTN, vec![]),
-            "ActDev" => {
+            Some(MenuAction::Ungap) => self.run(ctx, app, Executable::ABStreet, vec!["--ungap"]),
+            Some(MenuAction::FifteenMinuteNeighbourhoods) => {
+                self.run(ctx, app, Executable::FifteenMin, vec![])
+            }
+            Some(MenuAction::LowTrafficNeighbourhoods) => {
+                self.run(ctx, app, Executable::LTN, vec![])
+            }
+            Some(MenuAction::ActDev) => {
                 open_browser("https://actdev.cyipt.bike");
                 Transition::Keep
             }
-            "Advanced tools" => self.run(ctx, app, Executable::ABStreet, vec!["--devtools"]),
-            "About" => Transition::Push(PopupMsg::new_state(
+            Some(MenuAction::AdvancedTools) => {
+                self.run(ctx, app, Executable::ABStreet, vec!["--devtools"])
+            }
+            Some(MenuAction::About) => Transition::Push(PopupMsg::new_state(
                 ctx,
                 "About A/B Street",
                 vec![
-                    "Disclaimer: This software is based on imperfect data, heuristics concocted",
-                    "under the influence of cold brew, a simplified traffic simulation model,",
-                    "and a deeply flawed understanding of how much articulated buses can bend",
-                    "around tight corners. Use this as a conversation starter with your city",
-                    "government, not a final decision maker. Any resemblance of in-game",
-                    "characters to real people is probably coincidental, unless of course you",
-                    "stumble across the elusive \"Dustin Bikelino\". Have the appropriate",
-                    "amount of fun.",
+                    "A/B Street helps you explore traffic and test possible street changes.",
+                    "Results are estimates based on available map data and a simplified",
+                    "simulation model. Use them to explore ideas and support discussion,",
+                    "not as a final engineering or policy decision.",
                 ],
             )),
-            "Credits" => {
+            None if x == "Credits" => {
                 open_browser("https://a-b-street.github.io/docs/project/team.html");
                 Transition::Keep
             }
-            "Download the new release" => {
+            None if x == "Download the new release" => {
                 open_browser("https://github.com/a-b-street/abstreet/releases");
                 Transition::Keep
             }
@@ -348,6 +431,60 @@ mod built_info {
         } else {
             txt
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn focused_menu_has_one_map_first_primary_action() {
+        let entries = main_menu_entries();
+        let primary = entries
+            .iter()
+            .filter(|entry| entry.section == MenuSection::Primary)
+            .collect::<Vec<_>>();
+
+        assert_eq!(primary.len(), 1);
+        assert_eq!(primary[0].action, MenuAction::ExploreCity);
+        assert_eq!(primary[0].label, "Explore a city");
+    }
+
+    #[test]
+    fn focused_menu_does_not_expose_santa() {
+        assert!(main_menu_entries()
+            .iter()
+            .all(|entry| !entry.label.to_ascii_lowercase().contains("santa")));
+    }
+
+    #[test]
+    fn specialist_features_live_under_more_tools() {
+        for action in [
+            MenuAction::Ungap,
+            MenuAction::FifteenMinuteNeighbourhoods,
+            MenuAction::LowTrafficNeighbourhoods,
+            MenuAction::AdvancedTools,
+        ] {
+            let entry = main_menu_entries()
+                .iter()
+                .find(|entry| entry.action == action)
+                .unwrap();
+            assert_eq!(entry.section, MenuSection::More);
+        }
+    }
+
+    #[test]
+    fn more_tools_form_two_compact_rows() {
+        let rows = more_tool_rows(1_920.0);
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].len(), 4);
+        assert_eq!(rows[1].len(), 4);
+
+        let narrow_rows = more_tool_rows(900.0);
+        assert_eq!(narrow_rows.len(), 4);
+        assert!(narrow_rows.iter().all(|row| row.len() == 2));
     }
 }
 

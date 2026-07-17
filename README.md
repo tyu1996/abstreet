@@ -26,8 +26,7 @@ taking public transit. We create software to
 [plan bike networks](https://a-b-street.github.io/docs/software/ungap_the_map/index.html),
 create
 [low-traffic neighborhoods](https://a-b-street.github.io/docs/software/ltn/index.html),
-and educate the public about
-[15-minute neighborhoods through games](https://a-b-street.github.io/docs/software/santa.html).
+and help people explore how access to everyday destinations changes across a city.
 The project works anywhere in the world, thanks to
 [OpenStreetMap](https://www.openstreetmap.org/about).
 
