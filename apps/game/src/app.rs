@@ -674,8 +674,8 @@ pub struct PerMap {
 impl PerMap {
     pub fn map_loaded(
         mut map: Map,
-        sim: Sim,
-        flags: Flags,
+        mut sim: Sim,
+        mut flags: Flags,
         opts: &Options,
         cs: &ColorScheme,
         ctx: &mut EventCtx,
@@ -690,6 +690,9 @@ impl PerMap {
         timer.start("draw_map");
         let draw_map = DrawMap::new(ctx, &map, opts, cs, timer);
         timer.stop("draw_map");
+
+        sim.configure_alerts_for_gui();
+        flags.sim_flags.opts.configure_alerts_for_gui();
 
         PerMap {
             map,

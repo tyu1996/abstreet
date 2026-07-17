@@ -2,7 +2,7 @@ use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::time::Duration as StdDuration;
 
-use geom::{Circle, Pt2D, QuadTree, Time};
+use geom::{Angle, Distance, Polygon, Pt2D, QuadTree, Ring, Time};
 use instant::Instant;
 use map_gui::colors::ColorScheme;
 use map_gui::options::Options;
@@ -15,6 +15,43 @@ use crate::render::{
 };
 
 const UNZOOMED_AGENT_REFRESH_INTERVAL: StdDuration = StdDuration::from_secs(2);
+const UNZOOMED_AGENT_CHUNK_SIZE: usize = 512;
+const UNZOOMED_AGENT_MARKER_SIDES: usize = 12;
+
+fn make_unzoomed_agent_marker(radius: Distance) -> Polygon {
+    let center = Pt2D::new(0.0, 0.0);
+    let points = (0..=UNZOOMED_AGENT_MARKER_SIDES)
+        .map(|idx| {
+            center.project_away(
+                radius,
+                Angle::degrees((idx as f64) / (UNZOOMED_AGENT_MARKER_SIDES as f64) * 360.0),
+            )
+        })
+        .collect();
+    Ring::must_new(points).into_polygon()
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn prepare_unzoomed_agent_chunks<T, R, F>(items: &[T], chunk_size: usize, prepare: F) -> Vec<R>
+where
+    T: Sync,
+    R: Send,
+    F: Fn(&[T]) -> R + Send + Sync,
+{
+    use rayon::prelude::*;
+
+    items.par_chunks(chunk_size).map(prepare).collect()
+}
+
+#[cfg(target_arch = "wasm32")]
+fn prepare_unzoomed_agent_chunks<T, R, F>(items: &[T], chunk_size: usize, prepare: F) -> Vec<R>
+where
+    T: Sync,
+    R: Send,
+    F: Fn(&[T]) -> R + Send + Sync,
+{
+    items.chunks(chunk_size).map(prepare).collect()
+}
 
 fn should_refresh_unzoomed_agents(is_dragging: bool, has_cached_agents: bool) -> bool {
     !is_dragging || !has_cached_agents
@@ -137,40 +174,55 @@ impl AgentCache {
 
             let mut batch = GeomBatch::new();
             let mut quadtree = QuadTree::builder();
-            // It's quite silly to produce triangles for the same circle over and over again. ;)
-            let car_circle = Circle::new(
-                Pt2D::new(0.0, 0.0),
-                unzoomed_agent_radius(Some(VehicleType::Car)),
-            )
-            .to_polygon();
-            let ped_circle =
-                Circle::new(Pt2D::new(0.0, 0.0), unzoomed_agent_radius(None)).to_polygon();
+            // These markers are tiny while unzoomed, so use lower-resolution circles to avoid
+            // producing and uploading geometry that cannot be seen.
+            let car_circle =
+                make_unzoomed_agent_marker(unzoomed_agent_radius(Some(VehicleType::Car)));
+            let ped_circle = make_unzoomed_agent_marker(unzoomed_agent_radius(None));
 
-            for agent in sim.get_unzoomed_agents(map) {
-                if let Some(mut color) = self.unzoomed_agents.color(&agent, cs) {
-                    // If the sim has highlighted people, then fade all others out.
-                    if highlighted
-                        .as_ref()
-                        .and_then(|h| agent.person.as_ref().map(|p| !h.contains(p)))
-                        .unwrap_or(false)
-                    {
-                        // TODO Tune. How's this look at night?
-                        color = color.tint(0.5);
+            let agents = sim.get_unzoomed_agents(map);
+
+            let prepared_chunks =
+                prepare_unzoomed_agent_chunks(&agents, UNZOOMED_AGENT_CHUNK_SIZE, |agent_chunk| {
+                    let mut chunk_batch = GeomBatch::new();
+                    let mut spatial_entries = Vec::with_capacity(agent_chunk.len());
+
+                    for agent in agent_chunk {
+                        if let Some(mut color) = self.unzoomed_agents.color(agent, cs) {
+                            // If the sim has highlighted people, then fade all others out.
+                            if highlighted
+                                .as_ref()
+                                .and_then(|h| agent.person.as_ref().map(|p| !h.contains(p)))
+                                .unwrap_or(false)
+                            {
+                                // TODO Tune. How's this look at night?
+                                color = color.tint(0.5);
+                            }
+
+                            let circle = if agent.id.to_vehicle_type().is_some() {
+                                car_circle.translate(agent.pos.x(), agent.pos.y())
+                            } else {
+                                ped_circle.translate(agent.pos.x(), agent.pos.y())
+                            };
+                            spatial_entries.push((agent.id, circle.get_bounds()));
+                            chunk_batch.push(color, circle);
+                        }
                     }
 
-                    let circle = if agent.id.to_vehicle_type().is_some() {
-                        car_circle.translate(agent.pos.x(), agent.pos.y())
-                    } else {
-                        ped_circle.translate(agent.pos.x(), agent.pos.y())
-                    };
-                    quadtree.add_with_box(agent.id, circle.get_bounds());
-                    batch.push(color, circle);
+                    (spatial_entries, chunk_batch)
+                });
+
+            for (spatial_entries, chunk_batch) in prepared_chunks {
+                for (id, bounds) in spatial_entries {
+                    quadtree.add_with_box(id, bounds);
                 }
+                batch.append(chunk_batch);
             }
 
             let draw = prerender.as_ref().upload(batch);
+            let quadtree = quadtree.build();
 
-            self.unzoomed = Some((now, self.unzoomed_agents.clone(), quadtree.build(), draw));
+            self.unzoomed = Some((now, self.unzoomed_agents.clone(), quadtree, draw));
             self.unzoomed_last_refresh = Some(Instant::now());
         }
 
@@ -288,9 +340,34 @@ impl UnzoomedAgents {
 mod tests {
     use std::time::Duration;
 
+    use geom::Distance;
     use instant::Instant;
 
-    use super::{should_recalculate_unzoomed_agents, should_refresh_unzoomed_agents, AgentCache};
+    use super::{
+        make_unzoomed_agent_marker, prepare_unzoomed_agent_chunks,
+        should_recalculate_unzoomed_agents, should_refresh_unzoomed_agents, AgentCache,
+        UNZOOMED_AGENT_MARKER_SIDES,
+    };
+
+    #[test]
+    fn unzoomed_agent_markers_use_reduced_geometry() {
+        let marker = make_unzoomed_agent_marker(Distance::meters(10.0));
+
+        assert_eq!(
+            marker.get_outer_ring().points().len(),
+            UNZOOMED_AGENT_MARKER_SIDES + 1,
+        );
+    }
+
+    #[test]
+    fn parallel_agent_chunks_preserve_input_order() {
+        let input: Vec<usize> = (0..1_025).collect();
+
+        let chunks = prepare_unzoomed_agent_chunks(&input, 128, |chunk| chunk.to_vec());
+        let output: Vec<usize> = chunks.into_iter().flatten().collect();
+
+        assert_eq!(output, input);
+    }
 
     #[test]
     fn reuses_cached_unzoomed_agents_while_dragging() {

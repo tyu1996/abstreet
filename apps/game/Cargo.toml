@@ -51,3 +51,6 @@ synthpop = { path = "../../synthpop" }
 structopt = { workspace = true }
 wasm-bindgen = { workspace = true, optional = true }
 widgetry = { path = "../../widgetry" }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rayon = { workspace = true }
