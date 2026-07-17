@@ -548,6 +548,10 @@ impl TimePanel {
     pub fn pause(&mut self, ctx: &mut EventCtx, app: &App) {
         if !self.paused {
             self.paused = true;
+            app.primary
+                .agents
+                .borrow_mut()
+                .refresh_unzoomed_agents_next_time();
             self.recreate_panel(ctx, app);
         }
     }
