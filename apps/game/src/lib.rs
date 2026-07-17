@@ -554,6 +554,7 @@ fn finish_app_setup(
 
     let state = if let Some(ss) = savestate {
         app.primary.sim = ss;
+        app.primary.sim.configure_alerts_for_gui();
         SandboxMode::start_from_savestate(app)
     } else {
         match setup.mode {
