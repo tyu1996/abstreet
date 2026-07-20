@@ -274,6 +274,13 @@ pub fn nice_map_name(name: &MapName) -> &str {
             ("tripoli", "center") => "Tripoli",
             _ => &name.map,
         },
+        "my" => match (name.city.city.as_ref(), name.map.as_ref()) {
+            ("bintulu", "center") => "Central Bintulu",
+            ("kuching", "center") => "Central Kuching",
+            ("miri", "center") => "Central Miri",
+            ("sibu", "center") => "Central Sibu",
+            _ => &name.map,
+        },
         "nl" => match (name.city.city.as_ref(), name.map.as_ref()) {
             ("groningen", "center") => "Groningen (city center)",
             ("groningen", "huge") => "Groningen (entire area)",
@@ -363,6 +370,7 @@ pub fn nice_country_name(code: &str) -> &str {
         "jp" => "Japan",
         "kr" => "South Korea",
         "ly" => "Libya",
+        "my" => "Malaysia",
         "nl" => "Netherlands",
         "nz" => "New Zealand",
         "pl" => "Poland",
@@ -478,4 +486,23 @@ pub fn update_url_map_name(app: &dyn AppLike) {
             .unwrap()
             .to_string(),
     );
+}
+
+#[cfg(test)]
+mod sarawak_tests {
+    use super::{nice_country_name, nice_map_name};
+    use abstio::MapName;
+
+    #[test]
+    fn malaysia_and_sarawak_maps_have_readable_names() {
+        assert_eq!(nice_country_name("my"), "Malaysia");
+        for (city, label) in [
+            ("bintulu", "Central Bintulu"),
+            ("kuching", "Central Kuching"),
+            ("miri", "Central Miri"),
+            ("sibu", "Central Sibu"),
+        ] {
+            assert_eq!(nice_map_name(&MapName::new("my", city, "center")), label);
+        }
+    }
 }

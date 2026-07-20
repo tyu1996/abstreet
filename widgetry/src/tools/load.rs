@@ -16,6 +16,38 @@ use geom::Duration;
 
 use crate::{Color, EventCtx, GfxCtx, Line, Panel, State, Text, Transition, UpdateType};
 
+#[cfg(any(target_arch = "wasm32", test))]
+fn resolve_loader_url(base_url: &str, path: &str, gzipped: bool) -> String {
+    if path.starts_with("https://") || path.starts_with("http://") {
+        path.to_string()
+    } else if gzipped {
+        format!("{}/{}.gz", base_url, path)
+    } else {
+        format!("{}/{}", base_url, path)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_loader_url;
+
+    #[test]
+    fn absolute_loader_urls_are_not_rewritten() {
+        assert_eq!(
+            resolve_loader_url(
+                "https://old.example/v1",
+                "https://new.example/map.bin.gz",
+                true
+            ),
+            "https://new.example/map.bin.gz"
+        );
+        assert_eq!(
+            resolve_loader_url("https://old.example/v1", "data/system/map.bin", true),
+            "https://old.example/v1/data/system/map.bin.gz"
+        );
+    }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 pub use native_loader::FileLoader;
 
@@ -137,11 +169,7 @@ mod wasm_loader {
 
             // Note that files are gzipped on S3 and other deployments. When running locally, we
             // just symlink the data/ directory, where files aren't compressed.
-            let url = if ctx.prerender.assets_are_gzipped() {
-                format!("{}/{}.gz", base_url, path)
-            } else {
-                format!("{}/{}", base_url, path)
-            };
+            let url = resolve_loader_url(base_url, &path, ctx.prerender.assets_are_gzipped());
 
             // Make the HTTP request nonblockingly. When the response is received, send it through
             // the channel.

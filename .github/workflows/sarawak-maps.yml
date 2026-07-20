@@ -1,0 +1,92 @@
+name: Publish Sarawak maps
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-22.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/configure-pages@v5
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.75.0
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build portable map importer
+        run: cargo build --release --bin cli
+
+      - name: Generate compact Sarawak maps
+        shell: bash
+        run: |
+          set -euo pipefail
+          for city in bintulu kuching miri sibu; do
+            boundary="importer/config/my/${city}/center.geojson"
+            source="importer/config/my/${city}/center.osm.gz"
+            osm="data/input/my/${city}/osm/center.osm"
+            mkdir -p "$(dirname "${osm}")"
+            gzip --decompress --stdout "${source}" > "${osm}"
+            target/release/cli oneshot-import "${osm}" \
+              --clip-path="${boundary}" \
+              --country-code=my \
+              --city-name="${city}" \
+              --drive-on-left \
+              --inferred-sidewalks
+          done
+
+      - name: Validate maps and synthetic simulation
+        run: cargo test -p tests --test sarawak_maps -- --ignored --nocapture
+
+      - name: Test and prepare release assets
+        run: |
+          python -m unittest release.tests.test_prepare_sarawak_data -v
+          python release/prepare_sarawak_data.py --output release/sarawak-data
+
+      - name: Ensure generated metadata matches the branch
+        shell: bash
+        run: |
+          if ! git diff --exit-code -- data/MANIFEST.json; then
+            echo "Generated map metadata changed. Run the importer and packager locally, then commit data/MANIFEST.json before publishing."
+            exit 1
+          fi
+
+      - name: Prepare browser-hosted files
+        shell: bash
+        run: |
+          mkdir -p release/pages/sarawak-data-v1
+          cp release/sarawak-data/* release/pages/sarawak-data-v1/
+          touch release/pages/.nojekyll
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: release/pages
+
+      - name: Publish CORS-enabled browser files
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Publish immutable GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if git ls-remote --exit-code --tags origin refs/tags/sarawak-data-v1 >/dev/null 2>&1; then
+            echo "Tag sarawak-data-v1 already exists; refusing to replace working map data."
+            exit 1
+          fi
+          gh release create sarawak-data-v1 release/sarawak-data/* \
+            --target "${GITHUB_SHA}" \
+            --title "Sarawak map data v1" \
+            --notes "Compact A/B Street maps for Bintulu, Kuching, Miri, and Sibu. Map data © OpenStreetMap contributors, ODbL."

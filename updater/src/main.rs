@@ -413,7 +413,7 @@ async fn download_file(version: &str, path: &str, dl_from_local: bool) -> Result
         ));
     }
 
-    let url = format!("https://play.abstreet.org/{}/{}.gz", version, path);
+    let url = abstio::data_download_url(version, path);
     println!("> download {}", url);
     let (mut tx, rx) = futures_channel::mpsc::channel(1000);
     abstio::print_download_progress(rx);

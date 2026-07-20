@@ -5125,6 +5125,26 @@
       "uncompressed_size_bytes": 30753643,
       "compressed_size_bytes": 12490772
     },
+    "data/system/my/bintulu/maps/center.bin": {
+      "checksum": "0fd3f22e2a987295adb43732a2dc8b90",
+      "uncompressed_size_bytes": 15154149,
+      "compressed_size_bytes": 5972539
+    },
+    "data/system/my/kuching/maps/center.bin": {
+      "checksum": "adc5849e4335c908ae5f1fe99f8c3818",
+      "uncompressed_size_bytes": 56930703,
+      "compressed_size_bytes": 22794086
+    },
+    "data/system/my/miri/maps/center.bin": {
+      "checksum": "171e5ad42cc29af8a137b1cfb9e004d5",
+      "uncompressed_size_bytes": 18742942,
+      "compressed_size_bytes": 7306411
+    },
+    "data/system/my/sibu/maps/center.bin": {
+      "checksum": "3154e4ca4385096c1cfc31ee6ae2769a",
+      "uncompressed_size_bytes": 20015672,
+      "compressed_size_bytes": 7968156
+    },
     "data/system/nl/groningen/maps/center.bin": {
       "checksum": "fa28851e82a76822740eee1a4889af69",
       "uncompressed_size_bytes": 2694836,

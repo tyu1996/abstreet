@@ -47,6 +47,7 @@ pub async fn regenerate_everything(shard_num: usize, num_shards: usize) {
 
 /// Transforms a .osm.xml or .pbf file to a map in one step.
 pub async fn oneshot(
+    name: MapName,
     osm_path: String,
     clip: Option<String>,
     options: convert_osm::Options,
@@ -55,14 +56,7 @@ pub async fn oneshot(
 ) {
     let mut timer = abstutil::Timer::new("oneshot");
     println!("- Running convert_osm on {}", osm_path);
-    let name = abstutil::basename(&osm_path);
-    let raw = convert_osm::convert(
-        osm_path,
-        MapName::new("zz", "oneshot", &name),
-        clip,
-        options,
-        &mut timer,
-    );
+    let raw = convert_osm::convert(osm_path, name, clip, options, &mut timer);
     // Often helpful to save intermediate representation in case user wants to load into map_editor
     raw.save();
     let map = map_model::Map::create_from_raw(raw, opts, &mut timer);
