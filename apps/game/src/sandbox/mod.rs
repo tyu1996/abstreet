@@ -18,7 +18,7 @@ use self::misc_tools::{RoutePreview, TrafficRecorder};
 pub use self::speed::{SpeedSetting, TimePanel};
 pub use self::time_warp::TimeWarpScreen;
 use crate::app::{App, Transition};
-use crate::common::{tool_panel, CommonState};
+use crate::common::{tool_panel_with_help, CommonState};
 use crate::debug::DebugMode;
 use crate::edit::{
     can_edit_lane, EditMode, RoadEditor, SaveEdits, StopSignEditor, TrafficSignalEditor,
@@ -26,6 +26,7 @@ use crate::edit::{
 use crate::info::ContextualActions;
 use crate::layer::favorites::{Favorites, ShowFavorites};
 use crate::layer::PickLayer;
+use crate::pregame::StarterPanel;
 use crate::pregame::TitleScreen;
 use crate::render::{unzoomed_agent_radius, UnzoomedAgents};
 use crate::ID;
@@ -202,6 +203,9 @@ impl State<App> for SandboxMode {
                     }
                     "settings" => {
                         return Transition::Push(OptionsPanel::new_state(ctx, app));
+                    }
+                    "getting started" => {
+                        return Transition::Push(StarterPanel::help_state(ctx));
                     }
                     _ => unreachable!(),
                 }
@@ -718,7 +722,7 @@ impl SandboxControls {
                 None
             },
             tool_panel: if gameplay.has_tool_panel() {
-                Some(tool_panel(ctx))
+                Some(tool_panel_with_help(ctx))
             } else {
                 None
             },
@@ -737,7 +741,7 @@ impl SandboxControls {
 
     fn recreate_panels(&mut self, ctx: &mut EventCtx, app: &App) {
         if self.tool_panel.is_some() {
-            self.tool_panel = Some(tool_panel(ctx));
+            self.tool_panel = Some(tool_panel_with_help(ctx));
         }
         if let Some(ref mut speed) = self.time_panel {
             speed.recreate_panel(ctx, app);

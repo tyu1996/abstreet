@@ -16,6 +16,7 @@ pub struct Autocomplete<T: Clone> {
 
     current_line: String,
     chosen_values: Option<Vec<T>>,
+    show_results_when_empty: bool,
 }
 
 impl<T: 'static + Clone + Ord> Autocomplete<T> {
@@ -23,6 +24,25 @@ impl<T: 'static + Clone + Ord> Autocomplete<T> {
         ctx: &mut EventCtx,
         raw_choices: Vec<(String, T)>,
         num_search_results: usize,
+    ) -> Widget {
+        Self::new_widget_with_options(ctx, raw_choices, num_search_results, 50, true)
+    }
+
+    pub fn new_compact_widget(
+        ctx: &mut EventCtx,
+        raw_choices: Vec<(String, T)>,
+        num_search_results: usize,
+        textbox_chars: usize,
+    ) -> Widget {
+        Self::new_widget_with_options(ctx, raw_choices, num_search_results, textbox_chars, false)
+    }
+
+    fn new_widget_with_options(
+        ctx: &mut EventCtx,
+        raw_choices: Vec<(String, T)>,
+        num_search_results: usize,
+        textbox_chars: usize,
+        show_results_when_empty: bool,
     ) -> Widget {
         let mut grouped: MultiMap<String, T> = MultiMap::new();
         for (name, data) in raw_choices {
@@ -41,7 +61,7 @@ impl<T: 'static + Clone + Ord> Autocomplete<T> {
             tb: TextBox::new(
                 ctx,
                 "autocomplete textbox".to_string(),
-                50,
+                textbox_chars,
                 String::new(),
                 true,
             ),
@@ -49,6 +69,7 @@ impl<T: 'static + Clone + Ord> Autocomplete<T> {
 
             current_line: String::new(),
             chosen_values: None,
+            show_results_when_empty,
         };
         a.recalc_menu(ctx);
         Widget::new(Box::new(a))
@@ -61,25 +82,46 @@ impl<T: 'static + Clone> Autocomplete<T> {
     }
 
     fn recalc_menu(&mut self, ctx: &mut EventCtx) {
-        let mut choices = vec![Choice::new(
-            format!("anything matching \"{}\"", self.current_line),
-            (),
-        )];
-        let query = self.current_line.to_ascii_lowercase();
-        for (name, _) in &self.choices {
-            if name.to_ascii_lowercase().contains(&query) {
-                choices.push(Choice::new(name, ()));
-            }
-            if choices.len() == self.num_search_results {
-                break;
-            }
-        }
-        // "anything matching" is silly if we've resolved to exactly one choice
-        if choices.len() == 2 {
-            choices.remove(0);
-        }
-        self.menu = Menu::new(ctx, choices);
+        self.menu = Menu::new(
+            ctx,
+            matching_choice_labels(
+                &self.choices,
+                &self.current_line,
+                self.num_search_results,
+                self.show_results_when_empty,
+            )
+            .into_iter()
+            .map(|label| Choice::new(label, ()))
+            .collect(),
+        );
     }
+}
+
+fn matching_choice_labels<T>(
+    choices: &[(String, Vec<T>)],
+    current_line: &str,
+    num_search_results: usize,
+    show_results_when_empty: bool,
+) -> Vec<String> {
+    if current_line.is_empty() && !show_results_when_empty {
+        return Vec::new();
+    }
+
+    let mut labels = vec![format!("anything matching \"{}\"", current_line)];
+    let query = current_line.to_ascii_lowercase();
+    for (name, _) in choices {
+        if name.to_ascii_lowercase().contains(&query) {
+            labels.push(name.clone());
+        }
+        if labels.len() == num_search_results {
+            break;
+        }
+    }
+    // "anything matching" is silly if we've resolved to exactly one choice
+    if labels.len() == 2 {
+        labels.remove(0);
+    }
+    labels
 }
 
 impl<T: 'static + Clone> WidgetImpl for Autocomplete<T> {
@@ -137,5 +179,23 @@ impl<T: 'static + Clone> WidgetImpl for Autocomplete<T> {
     fn draw(&self, g: &mut GfxCtx) {
         self.tb.draw(g);
         self.menu.draw(g);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compact_results_hide_empty_queries_and_respect_the_limit() {
+        let choices = (0..8)
+            .map(|n| (format!("city {}", n), vec![n]))
+            .collect::<Vec<_>>();
+
+        assert!(matching_choice_labels(&choices, "", 6, false).is_empty());
+
+        let matches = matching_choice_labels(&choices, "city", 6, false);
+        assert_eq!(matches.len(), 6);
+        assert_eq!(matches[0], "anything matching \"city\"");
     }
 }

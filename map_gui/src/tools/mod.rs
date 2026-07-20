@@ -74,7 +74,7 @@ pub fn loading_tips() -> Text {
         Line("- simulating cities in Britain, Taiwan, Poland, and more?"),
         Line("- the 15-minute neighborhood tool?"),
         Line("- exploring all of the map layers?"),
-        Line("- playing 15-minute Santa, our arcade game spin-off?"),
+        Line("- testing a street change and comparing the results?"),
     ])
 }
 

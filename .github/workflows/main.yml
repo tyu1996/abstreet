@@ -50,9 +50,6 @@ jobs:
       - name: Build game
         working-directory: apps/game
         run: cargo build --release ${{ env.features }}
-      - name: Build santa
-        working-directory: apps/santa
-        run: cargo build --release ${{ env.features }}
       - name: Build fifteen_min
         working-directory: apps/fifteen_min
         run: cargo build --release ${{ env.features }}

@@ -315,7 +315,15 @@ impl CommonState {
 
 // TODO Kinda misnomer
 pub fn tool_panel(ctx: &mut EventCtx) -> Panel {
-    Panel::new_builder(Widget::row(vec![
+    build_tool_panel(ctx, false)
+}
+
+pub fn tool_panel_with_help(ctx: &mut EventCtx) -> Panel {
+    build_tool_panel(ctx, true)
+}
+
+fn build_tool_panel(ctx: &mut EventCtx, include_help: bool) -> Panel {
+    let mut buttons = vec![
         ctx.style()
             .btn_plain
             .icon("system/assets/tools/home.svg")
@@ -325,9 +333,19 @@ pub fn tool_panel(ctx: &mut EventCtx) -> Panel {
             .btn_plain
             .icon("system/assets/tools/settings.svg")
             .build_widget(ctx, "settings"),
-    ]))
-    .aligned(HorizontalAlignment::Left, VerticalAlignment::BottomAboveOSD)
-    .build(ctx)
+    ];
+    if include_help {
+        buttons.push(
+            ctx.style()
+                .btn_plain
+                .icon("system/assets/tools/help.svg")
+                .tooltip("Getting started")
+                .build_widget(ctx, "getting started"),
+        );
+    }
+    Panel::new_builder(Widget::row(buttons))
+        .aligned(HorizontalAlignment::Left, VerticalAlignment::BottomAboveOSD)
+        .build(ctx)
 }
 
 pub fn list_names<F: Fn(TextSpan) -> TextSpan>(txt: &mut Text, styler: F, names: BTreeSet<String>) {

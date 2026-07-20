@@ -28,8 +28,7 @@ impl<A: AppLike + 'static> CityPicker<A> {
         app: &A,
         on_load: Box<dyn FnOnce(&mut EventCtx, &mut A) -> Transition<A>>,
     ) -> Box<dyn State<A>> {
-        let city = app.map().get_city_name().clone();
-        CityPicker::new_in_city(ctx, on_load, city)
+        BrowseCities::new_state(ctx, app, on_load, app.map().get_city_name().country.clone())
     }
 
     fn new_in_city(
@@ -487,14 +486,305 @@ impl<A: AppLike + 'static> State<A> for CitiesInCountryPicker<A> {
 }
 
 fn cities_per_country() -> BTreeMap<String, Vec<CityName>> {
+    cities_per_country_from_manifest(&Manifest::load())
+}
+
+fn cities_per_country_from_manifest(manifest: &Manifest) -> BTreeMap<String, Vec<CityName>> {
     let mut per_country = BTreeMap::new();
-    for city in CityName::list_all_cities_merged(&Manifest::load()) {
+    for city in CityName::list_all_cities_merged(manifest) {
         per_country
             .entry(city.country.clone())
             .or_insert_with(Vec::new)
             .push(city);
     }
     per_country
+}
+
+fn maps_per_city(manifest: &Manifest) -> BTreeMap<CityName, Vec<MapName>> {
+    let mut per_city = BTreeMap::new();
+    for map in MapName::list_all_maps_merged(manifest) {
+        per_city
+            .entry(map.city.clone())
+            .or_insert_with(Vec::new)
+            .push(map);
+    }
+    per_city
+}
+
+struct BrowseCities<A: AppLike> {
+    panel: Panel,
+    on_load: Option<Box<dyn FnOnce(&mut EventCtx, &mut A) -> Transition<A>>>,
+}
+
+struct CityBrowserLayout {
+    autocomplete_chars: usize,
+    search_results: usize,
+    geography_width_percent: usize,
+    panel_width_percent: f64,
+    panel_height_percent: f64,
+    stacked: bool,
+}
+
+fn city_browser_layout(window_width: f64) -> CityBrowserLayout {
+    if window_width >= 1_100.0 {
+        CityBrowserLayout {
+            autocomplete_chars: 26,
+            search_results: 6,
+            geography_width_percent: 34,
+            panel_width_percent: 0.82,
+            panel_height_percent: 0.82,
+            stacked: false,
+        }
+    } else {
+        CityBrowserLayout {
+            autocomplete_chars: 26,
+            search_results: 6,
+            geography_width_percent: 78,
+            panel_width_percent: 0.9,
+            panel_height_percent: 0.86,
+            stacked: true,
+        }
+    }
+}
+
+impl<A: AppLike + 'static> BrowseCities<A> {
+    fn new_state(
+        ctx: &mut EventCtx,
+        _app: &A,
+        on_load: Box<dyn FnOnce(&mut EventCtx, &mut A) -> Transition<A>>,
+        selected_country: String,
+    ) -> Box<dyn State<A>> {
+        let layout = city_browser_layout(ctx.canvas.window_width);
+        let manifest = Manifest::load();
+        let per_country = cities_per_country_from_manifest(&manifest);
+        let maps_per_city = maps_per_city(&manifest);
+        let autocomplete_entries = per_country
+            .values()
+            .flatten()
+            .map(|city| (city_search_label(city), city.to_path()))
+            .collect::<Vec<_>>();
+
+        let mut city_rows = vec![Line(format!(
+            "Cities in {}",
+            nice_country_name(&selected_country)
+        ))
+        .small_heading()
+        .into_widget(ctx)];
+        if let Some(cities) = per_country.get(&selected_country) {
+            for city in cities {
+                let maps = maps_per_city
+                    .get(city)
+                    .map(Vec::as_slice)
+                    .unwrap_or_default();
+                #[cfg(not(target_arch = "wasm32"))]
+                let installed = maps
+                    .iter()
+                    .filter(|name| abstio::file_exists(name.path()))
+                    .count();
+                #[cfg(target_arch = "wasm32")]
+                let installed = 0;
+                city_rows.push(
+                    Widget::row(vec![
+                        ctx.style()
+                            .btn_outline
+                            .text(city.city.replace('_', " "))
+                            .build_widget(ctx, format!("city:{}", city.to_path())),
+                        Line(city_availability_label(
+                            installed,
+                            maps.len(),
+                            cfg!(target_arch = "wasm32"),
+                        ))
+                        .into_widget(ctx)
+                        .centered_vert(),
+                    ])
+                    .margin_below(8),
+                );
+            }
+        }
+
+        let mut by_region: BTreeMap<&'static str, Vec<String>> = BTreeMap::new();
+        for country in per_country.keys() {
+            by_region
+                .entry(geographic_region(country))
+                .or_default()
+                .push(country.clone());
+        }
+
+        let mut region_columns = Vec::new();
+        for region in [
+            "Americas",
+            "Europe",
+            "Africa and Middle East",
+            "Asia-Pacific",
+            "Other",
+        ] {
+            let Some(countries) = by_region.remove(region) else {
+                continue;
+            };
+            let mut rows = vec![Line(region).small_heading().into_widget(ctx)];
+            for country in countries {
+                let count = per_country[&country].len();
+                let label = format!("{} ({})", nice_country_name(&country), count);
+                let flag_path = format!("system/assets/flags/{}.svg", country);
+                let button = if abstio::file_exists(abstio::path(&flag_path)) {
+                    ctx.style()
+                        .btn_outline
+                        .icon_text(&flag_path, label)
+                        .image_color(RewriteColor::NoOp, ControlState::Default)
+                        .image_dims(24.0)
+                        .disabled(country == selected_country)
+                        .build_widget(ctx, format!("country:{}", country))
+                } else {
+                    ctx.style()
+                        .btn_outline
+                        .text(label)
+                        .disabled(country == selected_country)
+                        .build_widget(ctx, format!("country:{}", country))
+                };
+                rows.push(button.margin_below(6));
+            }
+            region_columns.push(Widget::col(rows).margin_right(12));
+        }
+
+        let city_list = Widget::col(vec![
+            Widget::row(vec![
+                Image::from_path("system/assets/tools/search.svg").into_widget(ctx),
+                Autocomplete::new_compact_widget(
+                    ctx,
+                    autocomplete_entries,
+                    layout.search_results,
+                    layout.autocomplete_chars,
+                )
+                .named("city search"),
+            ])
+            .padding(8),
+            Widget::col(city_rows),
+        ])
+        .section(ctx)
+        .margin_right(15);
+        let geographic_browser = Widget::col(vec![
+            Line("Browse the world").small_heading().into_widget(ctx),
+            Line("Choose a country to filter the city list.").into_widget(ctx),
+            Widget::custom_row(region_columns)
+                .flex_wrap(ctx, Percent::int(layout.geography_width_percent)),
+        ])
+        .section(ctx);
+        let browser = if layout.stacked {
+            Widget::col(vec![city_list, geographic_browser])
+        } else {
+            Widget::row(vec![city_list, geographic_browser])
+        };
+
+        Box::new(BrowseCities {
+            on_load: Some(on_load),
+            panel: Panel::new_builder(Widget::col(vec![
+                Widget::row(vec![
+                    Line("Choose a city").small_heading().into_widget(ctx),
+                    ctx.style().btn_close_widget(ctx),
+                ]),
+                browser,
+            ]))
+            .dims_width(PanelDims::ExactPercent(layout.panel_width_percent))
+            .dims_height(PanelDims::ExactPercent(layout.panel_height_percent))
+            .build(ctx),
+        })
+    }
+}
+
+impl<A: AppLike + 'static> State<A> for BrowseCities<A> {
+    fn event(&mut self, ctx: &mut EventCtx, app: &mut A) -> Transition<A> {
+        if self.on_load.is_none() {
+            return Transition::Pop;
+        }
+
+        if let Outcome::Clicked(x) = self.panel.event(ctx) {
+            if x == "close" {
+                return Transition::Pop;
+            }
+            if let Some(country) = x.strip_prefix("country:") {
+                return Transition::Replace(BrowseCities::new_state(
+                    ctx,
+                    app,
+                    self.on_load.take().unwrap(),
+                    country.to_string(),
+                ));
+            }
+            if let Some(city) = x.strip_prefix("city:") {
+                return chose_city_name(
+                    ctx,
+                    app,
+                    CityName::parse(city).unwrap(),
+                    &mut self.on_load,
+                );
+            }
+        }
+
+        if let Some(mut city_paths) = self.panel.autocomplete_done::<String>("city search") {
+            if !city_paths.is_empty() {
+                return chose_city_name(
+                    ctx,
+                    app,
+                    CityName::parse(&city_paths.remove(0)).unwrap(),
+                    &mut self.on_load,
+                );
+            }
+        }
+
+        Transition::Keep
+    }
+
+    fn draw_baselayer(&self) -> DrawBaselayer {
+        DrawBaselayer::PreviousState
+    }
+
+    fn draw(&self, g: &mut GfxCtx, app: &A) {
+        grey_out_map(g, app);
+        self.panel.draw(g);
+    }
+}
+
+fn chose_city_name<A: AppLike + 'static>(
+    ctx: &mut EventCtx,
+    app: &mut A,
+    city: CityName,
+    on_load: &mut Option<Box<dyn FnOnce(&mut EventCtx, &mut A) -> Transition<A>>>,
+) -> Transition<A> {
+    let mut maps = MapName::list_all_maps_in_city_merged(&city, &Manifest::load());
+    if maps.len() == 1 {
+        return chose_city(ctx, app, maps.pop().unwrap(), on_load);
+    }
+
+    Transition::Replace(CityPicker::new_in_city(ctx, on_load.take().unwrap(), city))
+}
+
+fn city_search_label(city: &CityName) -> String {
+    format!(
+        "{} ({})",
+        city.city.replace('_', " "),
+        nice_country_name(&city.country)
+    )
+}
+
+fn city_availability_label(installed: usize, total: usize, online_only: bool) -> &'static str {
+    if online_only {
+        "Available online"
+    } else if installed == 0 {
+        "Download"
+    } else if installed == total {
+        "Installed"
+    } else {
+        "Partly installed"
+    }
+}
+
+fn geographic_region(country: &str) -> &'static str {
+    match country {
+        "br" | "ca" | "cl" | "us" => "Americas",
+        "at" | "ch" | "cz" | "de" | "fr" | "gb" | "nl" | "pl" | "pt" => "Europe",
+        "il" | "ir" | "ly" => "Africa and Middle East",
+        "au" | "hk" | "in" | "jp" | "kr" | "nz" | "sg" | "tw" => "Asia-Pacific",
+        _ => "Other",
+    }
 }
 
 fn chose_city<A: AppLike + 'static>(
@@ -565,4 +855,48 @@ fn reimport_city<A: AppLike + 'static>(ctx: &mut EventCtx, app: &A) -> Transitio
             }
         }),
     ));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn city_search_labels_include_city_and_country() {
+        let seattle = CityName::new("us", "seattle");
+
+        assert_eq!(
+            city_search_label(&seattle),
+            "seattle (United States of America)"
+        );
+    }
+
+    #[test]
+    fn countries_are_grouped_into_geographic_regions() {
+        assert_eq!(geographic_region("us"), "Americas");
+        assert_eq!(geographic_region("gb"), "Europe");
+        assert_eq!(geographic_region("tw"), "Asia-Pacific");
+        assert_eq!(geographic_region("ly"), "Africa and Middle East");
+    }
+
+    #[test]
+    fn city_availability_distinguishes_partial_installations() {
+        assert_eq!(city_availability_label(0, 3, false), "Download");
+        assert_eq!(city_availability_label(1, 3, false), "Partly installed");
+        assert_eq!(city_availability_label(3, 3, false), "Installed");
+        assert_eq!(city_availability_label(0, 3, true), "Available online");
+    }
+
+    #[test]
+    fn city_browser_layout_stays_compact_and_stacks_on_narrow_windows() {
+        let wide = city_browser_layout(1_920.0);
+        assert_eq!(wide.autocomplete_chars, 26);
+        assert_eq!(wide.search_results, 6);
+        assert_eq!(wide.geography_width_percent, 34);
+        assert!(!wide.stacked);
+
+        let narrow = city_browser_layout(900.0);
+        assert_eq!(narrow.geography_width_percent, 78);
+        assert!(narrow.stacked);
+    }
 }
