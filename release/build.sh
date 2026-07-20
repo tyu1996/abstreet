@@ -30,7 +30,7 @@ mkdir $output/binaries
 
 cp release/INSTRUCTIONS.txt $output
 
-for name in game cli fifteen_min osm_viewer parking_mapper santa ltn; do
+for name in game cli fifteen_min osm_viewer parking_mapper ltn; do
     bin="target/release/${name}${suffix}"
     if [[ "$output" = "abst_mac" ]]; then
         # If this errors or hangs, ensure you've imported and unlocked a
@@ -43,7 +43,7 @@ done
 
 # Generate a script to run each app and capture output logs
 # Note these're different than the executable names
-for name in play_abstreet ungap_the_map fifteen_min osm_viewer parking_mapper santa ltn; do
+for name in play_abstreet ungap_the_map fifteen_min osm_viewer parking_mapper ltn; do
 	if [[ "$os" = "windows-latest" ]]; then
 		case $name in
 			play_abstreet)

@@ -237,6 +237,7 @@ impl State<App> for DebugMode {
                         {
                             Some(new_sim) => {
                                 app.primary.sim = new_sim;
+                                app.primary.sim.configure_alerts_for_gui();
                                 app.recalculate_current_selection(ctx);
                                 None
                             }
@@ -260,6 +261,7 @@ impl State<App> for DebugMode {
                         {
                             Some(new_sim) => {
                                 app.primary.sim = new_sim;
+                                app.primary.sim.configure_alerts_for_gui();
                                 app.recalculate_current_selection(ctx);
                                 None
                             }
@@ -285,6 +287,7 @@ impl State<App> for DebugMode {
                             ctx.loading_screen("load savestate", |ctx, timer| {
                                 app.primary.sim = Sim::load_savestate(ss_path, timer)
                                     .expect("Can't load savestate");
+                                app.primary.sim.configure_alerts_for_gui();
                                 app.recalculate_current_selection(ctx);
                             });
                             Transition::Pop

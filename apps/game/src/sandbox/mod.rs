@@ -18,7 +18,7 @@ use self::misc_tools::{RoutePreview, TrafficRecorder};
 pub use self::speed::{SpeedSetting, TimePanel};
 pub use self::time_warp::TimeWarpScreen;
 use crate::app::{App, Transition};
-use crate::common::{tool_panel, CommonState};
+use crate::common::{tool_panel_with_help, CommonState};
 use crate::debug::DebugMode;
 use crate::edit::{
     can_edit_lane, EditMode, RoadEditor, SaveEdits, StopSignEditor, TrafficSignalEditor,
@@ -26,6 +26,7 @@ use crate::edit::{
 use crate::info::ContextualActions;
 use crate::layer::favorites::{Favorites, ShowFavorites};
 use crate::layer::PickLayer;
+use crate::pregame::StarterPanel;
 use crate::pregame::TitleScreen;
 use crate::render::{unzoomed_agent_radius, UnzoomedAgents};
 use crate::ID;
@@ -166,9 +167,11 @@ impl State<App> for SandboxMode {
         }
 
         // We need to recalculate unzoomed agent mouseover when the mouse is still and time passes
-        // (since something could move beneath the cursor), or when the mouse moves.
+        // (since something could move beneath the cursor), or when the mouse moves. While dragging,
+        // keep using the existing agent cache; the release event refreshes it.
         if app.primary.current_selection.is_none()
             && ctx.canvas.is_unzoomed()
+            && !ctx.canvas.is_actively_dragging()
             && (ctx.redo_mouseover()
                 || self
                     .recalc_unzoomed_agent
@@ -200,6 +203,9 @@ impl State<App> for SandboxMode {
                     }
                     "settings" => {
                         return Transition::Push(OptionsPanel::new_state(ctx, app));
+                    }
+                    "getting started" => {
+                        return Transition::Push(StarterPanel::help_state(ctx));
                     }
                     _ => unreachable!(),
                 }
@@ -670,12 +676,19 @@ fn mouseover_unzoomed_agent_circle(ctx: &mut EventCtx, app: &mut App) {
     } else {
         return;
     };
+    let force_refresh = ctx.canvas.is_dragging() && !ctx.canvas.is_actively_dragging();
 
     for id in app
         .primary
         .agents
         .borrow_mut()
-        .calculate_unzoomed_agents(ctx, &app.primary.map, &app.primary.sim, &app.cs)
+        .calculate_unzoomed_agents(
+            ctx,
+            &app.primary.map,
+            &app.primary.sim,
+            &app.cs,
+            force_refresh,
+        )
         .query_bbox(Circle::new(cursor, Distance::meters(3.0)).get_bounds())
     {
         if let Some(pt) = app.primary.sim.canonical_pt_for_agent(id, &app.primary.map) {
@@ -709,7 +722,7 @@ impl SandboxControls {
                 None
             },
             tool_panel: if gameplay.has_tool_panel() {
-                Some(tool_panel(ctx))
+                Some(tool_panel_with_help(ctx))
             } else {
                 None
             },
@@ -728,7 +741,7 @@ impl SandboxControls {
 
     fn recreate_panels(&mut self, ctx: &mut EventCtx, app: &App) {
         if self.tool_panel.is_some() {
-            self.tool_panel = Some(tool_panel(ctx));
+            self.tool_panel = Some(tool_panel_with_help(ctx));
         }
         if let Some(ref mut speed) = self.time_panel {
             speed.recreate_panel(ctx, app);

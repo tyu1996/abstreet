@@ -93,6 +93,15 @@ struct Args {
     /// Start in the simulation sandbox mode
     #[structopt(long)]
     sandbox: bool,
+    /// Start with the city browser
+    #[structopt(long)]
+    explore: bool,
+    /// Start by opening an existing street-change proposal
+    #[structopt(long = "open-project")]
+    open_project: bool,
+    /// Start with beginner guidance on the current map
+    #[structopt(long)]
+    starter: bool,
     /// Start by showing community proposals
     #[structopt(long)]
     proposals: bool,
@@ -149,6 +158,9 @@ enum Mode {
     TutorialIntro,
     Challenges,
     Sandbox,
+    Explore,
+    OpenProject,
+    Starter,
     Proposals,
     Ungap,
     Devtools,
@@ -191,6 +203,12 @@ fn run(mut settings: Settings) {
             Mode::Challenges
         } else if args.sandbox {
             Mode::Sandbox
+        } else if args.explore {
+            Mode::Explore
+        } else if args.open_project {
+            Mode::OpenProject
+        } else if args.starter {
+            Mode::Starter
         } else if args.proposals {
             Mode::Proposals
         } else if args.ungap {
@@ -530,7 +548,8 @@ fn finish_app_setup(
                 app.primary.layer = Some(Box::new(layer::elevation::SteepStreets::new(ctx, app)));
             }
             "elevation" => {
-                app.primary.layer = Some(Box::new(layer::elevation::ElevationContours::new(ctx, app)));
+                app.primary.layer =
+                    Some(Box::new(layer::elevation::ElevationContours::new(ctx, app)));
             }
             "map_edits" => {
                 app.primary.layer = Some(Box::new(layer::map::Static::edits(ctx, app)));
@@ -544,7 +563,9 @@ fn finish_app_setup(
             }
             "transit_network" => {
                 // Transit network layer - showing all routes, buses, and trains by default
-                app.primary.layer = Some(Box::new(layer::transit::TransitNetwork::new(ctx, app, true, true, true)));
+                app.primary.layer = Some(Box::new(layer::transit::TransitNetwork::new(
+                    ctx, app, true, true, true,
+                )));
             }
             _ => {
                 warn!("Unknown layer: {}", layer_name);
@@ -554,6 +575,7 @@ fn finish_app_setup(
 
     let state = if let Some(ss) = savestate {
         app.primary.sim = ss;
+        app.primary.sim.configure_alerts_for_gui();
         SandboxMode::start_from_savestate(app)
     } else {
         match setup.mode {
@@ -603,6 +625,9 @@ fn finish_app_setup(
                     Vec::new(),
                 ),
             ),
+            Mode::Explore => pregame::enter_state(ctx, app, vec!["--explore"]),
+            Mode::OpenProject => pregame::enter_state(ctx, app, vec!["--open-project"]),
+            Mode::Starter => pregame::enter_state(ctx, app, vec!["--starter"]),
             Mode::Proposals => pregame::proposals::Proposals::new_state(ctx, None),
             Mode::Ungap => {
                 let layers = ungap::Layers::new(ctx, app);
@@ -620,14 +645,14 @@ fn finish_app_setup(
             }
         }
     };
-    
+
     let mut states = vec![TitleScreen::new_state(ctx, app), state];
-    
+
     // Handle info panel parameter - needs to be done after the state is created
     if let Some(info_id) = setup.start_with_info_panel {
         states.push(Box::new(InitialInfoPanel { info_id }));
     }
-    
+
     states
 }
 
@@ -645,8 +670,24 @@ impl State<App> for InitialInfoPanel {
             }
         }
     }
-    
+
     fn draw(&self, _: &mut GfxCtx, _: &App) {}
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shared_menu_startup_flags_are_accepted() {
+        for flag in ["--explore", "--open-project", "--starter"] {
+            assert!(
+                Args::from_iter_safe(["game", flag]).is_ok(),
+                "{} should be accepted when another app launches A/B Street",
+                flag
+            );
+        }
+    }
 }
 
 #[cfg(target_arch = "wasm32")]

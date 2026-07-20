@@ -368,12 +368,17 @@ impl Canvas {
         self.cam_zoom >= self.settings.min_zoom_for_detail
     }
 
-    pub(crate) fn is_dragging(&self) -> bool {
+    pub fn is_dragging(&self) -> bool {
         // This could be called before or after handle_event. So we need to repeat the threshold
         // check here! Alternatively, we could this upfront in runner.
         if self.drag_just_ended {
             return true;
         }
+        self.is_actively_dragging()
+    }
+
+    /// True only while the user is actively dragging the map, not on the release event.
+    pub fn is_actively_dragging(&self) -> bool {
         if let Some((_, orig)) = self.drag_canvas_from {
             let pt = self.get_cursor();
             let dist = ((pt.x - orig.x).powi(2) + (pt.y - orig.y).powi(2)).sqrt();

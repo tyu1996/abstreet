@@ -145,6 +145,12 @@ impl SimOptions {
             skip_analytics: false,
         }
     }
+
+    pub fn configure_alerts_for_gui(&mut self) {
+        if matches!(self.alerts, AlertHandler::Print) {
+            self.alerts = AlertHandler::Silence;
+        }
+    }
 }
 
 impl Default for SimOptions {
@@ -986,6 +992,12 @@ impl Sim {
     pub fn clear_alerts(&mut self) -> Vec<(Time, AlertLocation, String)> {
         std::mem::take(&mut self.analytics.alerts)
     }
+
+    pub fn configure_alerts_for_gui(&mut self) {
+        if matches!(self.alerts, AlertHandler::Print) {
+            self.alerts = AlertHandler::Silence;
+        }
+    }
 }
 
 // Callbacks
@@ -994,6 +1006,54 @@ pub trait SimCallback: downcast_rs::Downcast {
     fn run(&mut self, sim: &Sim, map: &Map) -> bool;
 }
 downcast_rs::impl_downcast!(SimCallback);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sim_with_alert_handler(alerts: AlertHandler) -> Sim {
+        let mut opts = SimOptions::default();
+        opts.alerts = alerts;
+        Sim::new(&Map::blank(), opts)
+    }
+
+    #[test]
+    fn gui_silences_default_console_alerts() {
+        let mut sim = sim_with_alert_handler(AlertHandler::Print);
+
+        sim.configure_alerts_for_gui();
+
+        assert!(matches!(sim.alerts, AlertHandler::Silence));
+    }
+
+    #[test]
+    fn gui_preserves_explicit_blocking_alerts() {
+        let mut sim = sim_with_alert_handler(AlertHandler::Block);
+
+        sim.configure_alerts_for_gui();
+
+        assert!(matches!(sim.alerts, AlertHandler::Block));
+    }
+
+    #[test]
+    fn gui_options_silence_default_console_alerts() {
+        let mut opts = SimOptions::default();
+
+        opts.configure_alerts_for_gui();
+
+        assert!(matches!(opts.alerts, AlertHandler::Silence));
+    }
+
+    #[test]
+    fn gui_options_preserve_explicit_blocking_alerts() {
+        let mut opts = SimOptions::default();
+        opts.alerts = AlertHandler::Block;
+
+        opts.configure_alerts_for_gui();
+
+        assert!(matches!(opts.alerts, AlertHandler::Block));
+    }
+}
 
 impl Sim {
     /// Only one at a time supported.
