@@ -51,16 +51,27 @@ jobs:
 
       - name: Test and prepare release assets
         run: |
-          python -m unittest release.tests.test_prepare_sarawak_data -v
-          python release/prepare_sarawak_data.py --output release/sarawak-data
+          python3 -m unittest release.tests.test_prepare_sarawak_data -v
+          python3 release/prepare_sarawak_data.py --output release/sarawak-data
 
-      - name: Ensure generated metadata matches the branch
+      # The importer runs here, so these maps are the bytes we publish. Record their checksums in
+      # the branch instead of demanding that a locally built MANIFEST.json matches byte for byte;
+      # otherwise a different toolchain or platform silently blocks publishing.
+      - name: Commit regenerated map metadata
+        id: metadata
         shell: bash
         run: |
-          if ! git diff --exit-code -- data/MANIFEST.json; then
-            echo "Generated map metadata changed. Run the importer and packager locally, then commit data/MANIFEST.json before publishing."
-            exit 1
+          set -euo pipefail
+          if git diff --quiet -- data/MANIFEST.json; then
+            echo "Map metadata already matches the generated maps."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add data/MANIFEST.json
+            git commit -m "chore: record Sarawak map checksums from the publishing run"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
           fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Prepare browser-hosted files
         shell: bash
@@ -87,6 +98,6 @@ jobs:
             exit 1
           fi
           gh release create sarawak-data-v1 release/sarawak-data/* \
-            --target "${GITHUB_SHA}" \
+            --target "${{ steps.metadata.outputs.sha }}" \
             --title "Sarawak map data v1" \
             --notes "Compact A/B Street maps for Bintulu, Kuching, Miri, and Sibu. Map data © OpenStreetMap contributors, ODbL."
