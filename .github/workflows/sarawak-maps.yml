@@ -19,6 +19,13 @@ jobs:
 
       - uses: actions/configure-pages@v5
 
+      # The validation test links the `tests` crate, which depends on the ltn app and so needs the
+      # same GUI system libraries the other workflows install.
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libxcb-shape0-dev libxcb-xfixes0-dev libpango1.0-dev libgtk-3-dev
+
       # Cargo.lock is lockfile version 4, which needs Cargo 1.78 or newer. Pin the same toolchain
       # the maps were imported with locally so the published data stays reproducible.
       - uses: dtolnay/rust-toolchain@master
