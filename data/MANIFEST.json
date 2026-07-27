@@ -5131,12 +5131,12 @@
       "compressed_size_bytes": 5972539
     },
     "data/system/my/kuching/maps/center.bin": {
-      "checksum": "adc5849e4335c908ae5f1fe99f8c3818",
+      "checksum": "18f222bb82cb3ff0a9ad374955bcf416",
       "uncompressed_size_bytes": 56930703,
-      "compressed_size_bytes": 22794086
+      "compressed_size_bytes": 22794089
     },
     "data/system/my/miri/maps/center.bin": {
-      "checksum": "171e5ad42cc29af8a137b1cfb9e004d5",
+      "checksum": "6c688697189bd89e228af5e376ddce13",
       "uncompressed_size_bytes": 18742942,
       "compressed_size_bytes": 7306411
     },
