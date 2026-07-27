@@ -454,3 +454,23 @@ pub fn path_raw_map(name: &MapName) -> String {
 pub fn path_shared_input<I: AsRef<str>>(i: I) -> String {
     path(format!("input/shared/{}", i.as_ref()))
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    #[test]
+    fn sarawak_importer_configs_define_one_center_map_per_city() {
+        for city in ["bintulu", "kuching", "miri", "sibu"] {
+            let city_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../importer/config/my")
+                .join(city);
+            let configs = fs_err::read_dir(&city_dir)
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name().to_string_lossy().to_string())
+                .filter(|name| name.ends_with(".geojson"))
+                .collect::<Vec<_>>();
+            assert_eq!(configs, vec!["center.geojson"]);
+        }
+    }
+}

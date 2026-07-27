@@ -107,11 +107,7 @@ async fn download_files(
     for (path, entry) in manifest.entries {
         files_so_far += 1;
         let local_path = abstio::path(path.strip_prefix("data/").unwrap());
-        let url = format!(
-            "https://play.abstreet.org/{}/{}.gz",
-            crate::tools::version(),
-            path
-        );
+        let url = abstio::data_download_url(crate::tools::version(), &path);
         if let Err(err) = outer_progress.try_send(format!(
             "Downloading file {}/{}: {} ({})",
             files_so_far,

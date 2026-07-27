@@ -782,7 +782,7 @@ fn geographic_region(country: &str) -> &'static str {
         "br" | "ca" | "cl" | "us" => "Americas",
         "at" | "ch" | "cz" | "de" | "fr" | "gb" | "nl" | "pl" | "pt" => "Europe",
         "il" | "ir" | "ly" => "Africa and Middle East",
-        "au" | "hk" | "in" | "jp" | "kr" | "nz" | "sg" | "tw" => "Asia-Pacific",
+        "au" | "hk" | "in" | "jp" | "kr" | "my" | "nz" | "sg" | "tw" => "Asia-Pacific",
         _ => "Other",
     }
 }
@@ -876,6 +876,7 @@ mod tests {
         assert_eq!(geographic_region("us"), "Americas");
         assert_eq!(geographic_region("gb"), "Europe");
         assert_eq!(geographic_region("tw"), "Asia-Pacific");
+        assert_eq!(geographic_region("my"), "Asia-Pacific");
         assert_eq!(geographic_region("ly"), "Africa and Middle East");
     }
 

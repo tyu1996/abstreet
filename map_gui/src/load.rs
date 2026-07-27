@@ -5,7 +5,25 @@ use widgetry::{EventCtx, GfxCtx, State, Transition};
 
 use crate::AppLike;
 
+const SARAWAK_PAGES_BASE: &str = "https://tyu1996.github.io/abstreet/sarawak-data-v1";
+
 pub struct MapLoader;
+
+fn remote_map_url(_version: &str, name: &MapName) -> Option<String> {
+    if name.city.country == "my" {
+        let path = format!(
+            "data/system/{}/{}/maps/{}.bin",
+            name.city.country, name.city.city, name.map
+        );
+        Some(format!(
+            "{}/{}.gz",
+            SARAWAK_PAGES_BASE,
+            path.replace('/', "--")
+        ))
+    } else {
+        None
+    }
+}
 
 impl MapLoader {
     pub fn new_state<A: AppLike + 'static>(
@@ -56,9 +74,14 @@ impl MapLoader {
             }
         }
 
+        let path = if cfg!(target_arch = "wasm32") {
+            remote_map_url(crate::tools::version(), &name).unwrap_or_else(|| name.path())
+        } else {
+            name.path()
+        };
         FileLoader::<A, map_model::Map>::new_state(
             ctx,
-            name.path(),
+            path,
             Box::new(move |ctx, app, timer, map| {
                 match map {
                     Ok(mut map) => {
@@ -85,6 +108,24 @@ impl MapLoader {
 
 struct MapAlreadyLoaded<A: AppLike> {
     on_load: Option<Box<dyn FnOnce(&mut EventCtx, &mut A) -> Transition<A>>>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::remote_map_url;
+    use abstio::MapName;
+
+    #[test]
+    fn sarawak_web_maps_use_the_cors_enabled_owned_host() {
+        assert!(remote_map_url("dev", &MapName::new("us", "seattle", "montlake")).is_none());
+        assert_eq!(
+            remote_map_url("dev", &MapName::new("my", "kuching", "center")).unwrap(),
+            concat!(
+                "https://tyu1996.github.io/abstreet/sarawak-data-v1/",
+                "data--system--my--kuching--maps--center.bin.gz"
+            )
+        );
+    }
 }
 impl<A: AppLike + 'static> State<A> for MapAlreadyLoaded<A> {
     fn event(&mut self, ctx: &mut EventCtx, app: &mut A) -> Transition<A> {

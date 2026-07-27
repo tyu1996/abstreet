@@ -25,6 +25,42 @@ pub struct Entry {
     pub compressed_size_bytes: u64,
 }
 
+const SARAWAK_DATA_RELEASE: &str =
+    "https://github.com/tyu1996/abstreet/releases/download/sarawak-data-v1";
+
+/// Resolve a manifest path to its compressed download URL.
+pub fn data_download_url(version: &str, path: &str) -> String {
+    if path.starts_with("data/system/my/") {
+        format!("{}/{}.gz", SARAWAK_DATA_RELEASE, path.replace('/', "--"))
+    } else {
+        format!("https://play.abstreet.org/{}/{}.gz", version, path)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::data_download_url;
+
+    #[test]
+    fn existing_data_keeps_using_abstreet_hosting() {
+        assert_eq!(
+            data_download_url("dev", "data/system/us/seattle/maps/montlake.bin"),
+            "https://play.abstreet.org/dev/data/system/us/seattle/maps/montlake.bin.gz"
+        );
+    }
+
+    #[test]
+    fn sarawak_runtime_data_uses_the_owned_github_release() {
+        assert_eq!(
+            data_download_url("dev", "data/system/my/kuching/maps/center.bin"),
+            concat!(
+                "https://github.com/tyu1996/abstreet/releases/download/sarawak-data-v1/",
+                "data--system--my--kuching--maps--center.bin.gz"
+            )
+        );
+    }
+}
+
 impl Manifest {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn load() -> Manifest {

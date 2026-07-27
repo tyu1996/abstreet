@@ -148,10 +148,15 @@ enum Command {
         /// The path to a GeoJSON file with a boundary
         #[structopt(long)]
         geojson_path: String,
-        /// What to name the new imported map. The country will always be "zz" (a fake country
-        /// code), with the city as "oneshot." This name shouldn't contain spaces or be empty.
+        /// What to name the new imported map. This shouldn't contain spaces or be empty.
         #[structopt(long)]
         map_name: String,
+        /// Two-letter country code used for the generated map path.
+        #[structopt(long, default_value = "zz")]
+        country_code: String,
+        /// City directory used for the generated map path.
+        #[structopt(long, default_value = "oneshot")]
+        city_name: String,
         /// Use Geofabrik to grab OSM input if true, or Overpass if false. Overpass is faster.
         #[structopt(long)]
         use_geofabrik: bool,
@@ -163,6 +168,9 @@ enum Command {
         /// If false, no inference will occur and separate sidewalks and crossings will be included.
         #[structopt(long)]
         inferred_sidewalks: bool,
+        /// Build lanes and turns for countries where traffic drives on the left.
+        #[structopt(long)]
+        drive_on_left: bool,
         /// Downgrade crosswalks not matching a `highway=crossing` OSM node into unmarked crossings.
         #[structopt(long)]
         filter_crosswalks: bool,
@@ -177,6 +185,12 @@ enum Command {
     OneshotImport {
         #[structopt()]
         osm_input: String,
+        /// Two-letter country code used for the generated map path.
+        #[structopt(long, default_value = "zz")]
+        country_code: String,
+        /// City directory used for the generated map path.
+        #[structopt(long, default_value = "oneshot")]
+        city_name: String,
         /// The path to a GeoJSON file with one boundary polygon. If omitted, a boundary will be
         /// derived from the .osm file, but borders will likely be broken or missing.
         #[structopt(long)]
@@ -185,6 +199,9 @@ enum Command {
         /// If false, no inference will occur and separate sidewalks and crossings will be included.
         #[structopt(long)]
         inferred_sidewalks: bool,
+        /// Build lanes and turns for countries where traffic drives on the left.
+        #[structopt(long)]
+        drive_on_left: bool,
         /// Downgrade crosswalks not matching a `highway=crossing` OSM node into unmarked crossings.
         /// Downgrade crosswalks not matching a `highway=crossing` OSM node into unmarked crossings.
         #[structopt(long)]
@@ -292,18 +309,26 @@ async fn main() -> Result<()> {
         Command::OneStepImport {
             geojson_path,
             map_name,
+            country_code,
+            city_name,
             use_geofabrik,
             use_osmium,
             inferred_sidewalks,
+            drive_on_left,
             filter_crosswalks,
             create_uk_travel_demand_model,
             opts,
         } => {
             let mut options = convert_osm::Options::default();
             options.map_config.inferred_sidewalks = inferred_sidewalks;
+            if drive_on_left {
+                options.map_config.driving_side = map_model::DrivingSide::Left;
+            }
             options.filter_crosswalks = filter_crosswalks;
             one_step_import::run(
                 geojson_path,
+                country_code,
+                city_name,
                 map_name,
                 use_geofabrik,
                 use_osmium,
@@ -315,16 +340,28 @@ async fn main() -> Result<()> {
         }
         Command::OneshotImport {
             osm_input,
+            country_code,
+            city_name,
             clip_path,
             inferred_sidewalks,
+            drive_on_left,
             filter_crosswalks,
             create_uk_travel_demand_model,
             opts,
         } => {
             let mut options = convert_osm::Options::default();
             options.map_config.inferred_sidewalks = inferred_sidewalks;
+            if drive_on_left {
+                options.map_config.driving_side = map_model::DrivingSide::Left;
+            }
             options.filter_crosswalks = filter_crosswalks;
+            let name = one_step_import::target_map_name(
+                &country_code,
+                &city_name,
+                &abstutil::basename(&osm_input),
+            )?;
             importer::oneshot(
+                name,
                 osm_input,
                 clip_path,
                 options,
@@ -374,6 +411,22 @@ fn dump_json(path: String) {
         "Don't know how to dump JSON for {}. Only maps, raw maps, and scenarios are supported.",
         path
     );
+}
+
+#[cfg(test)]
+mod sarawak_tests {
+    use super::Command;
+    use structopt::StructOpt;
+
+    #[test]
+    fn oneshot_import_accepts_an_explicit_left_driving_side() {
+        match Command::from_iter_safe(&["abcli", "oneshot-import", "center.osm", "--drive-on-left"])
+            .unwrap()
+        {
+            Command::OneshotImport { drive_on_left, .. } => assert!(drive_on_left),
+            _ => panic!("parsed the wrong command"),
+        }
+    }
 }
 
 fn random_scenario(rng_seed: u64, map: String, scenario_name: String) {
