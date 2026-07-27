@@ -19,9 +19,11 @@ jobs:
 
       - uses: actions/configure-pages@v5
 
+      # Cargo.lock is lockfile version 4, which needs Cargo 1.78 or newer. Pin the same toolchain
+      # the maps were imported with locally so the published data stays reproducible.
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.75.0
+          toolchain: 1.89.0
 
       - uses: Swatinem/rust-cache@v2
 
